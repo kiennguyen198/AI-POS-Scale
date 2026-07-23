@@ -14,3 +14,7 @@ CONFIDENCE_THRESHOLD=0.5
 
 # Database
 DATABASE_PATH=PROJECT_ROOT/'database'/'fruits.db'
+
+# Scale
+HX711_DT_PIN=5
+HX711_SCK_PIN=6
