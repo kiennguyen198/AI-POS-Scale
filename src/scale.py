@@ -1,4 +1,4 @@
-from config import HX711_DT_PIN,HX711_SCK_PIN
+from config import HX711_DT_PIN,HX711_SCK_PIN,EMPTY_WEIGHT_THRESHOLD,STABLE_WEIGHT_THRESHOLD,STABLE_SAMPLE_COUNT,MAX_WEIGHT
 from statistics import median
 
 def setup_scale():
@@ -31,6 +31,31 @@ def get_weight(hx,tare_offset,calibration):
     raw_diff=raw_value-tare_offset
     weight=raw_diff/calibration
     return round(weight)
+
+def is_scale_empty(weight):
+    return abs(weight)<=EMPTY_WEIGHT_THRESHOLD
+
+def is_weight_stable(weights):
+    if len(weights)<STABLE_SAMPLE_COUNT:
+        return False
+
+    recent_weights=weights[-STABLE_SAMPLE_COUNT:]
+    highest_weight=max(recent_weights)
+    lowest_weight=min(recent_weights)
+    weight_change=highest_weight-lowest_weight
+
+    #15 lần đo (max-min)<= Weight_threshold thì cân ổn định
+
+    if weight_change<=STABLE_WEIGHT_THRESHOLD:
+        return True
+    else:
+        return False
+
+def is_overloaded(weight):
+    if weight>MAX_WEIGHT:
+        return True
+    else:
+        return False
 
 def cleanup_scale():
     import RPi.GPIO as GPIO
