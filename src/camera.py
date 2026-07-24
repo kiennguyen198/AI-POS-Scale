@@ -1,6 +1,6 @@
 import cv2
 
-from config import CAMERA_SOURCE,FRAME_HEIGHT,FRAME_WIDTH
+from config import CAMERA_SOURCE,FRAME_HEIGHT,FRAME_WIDTH,SCALE_X1,SCALE_X2,SCALE_Y1,SCALE_Y2
 
 def open_camera():
     cap=cv2.VideoCapture(CAMERA_SOURCE)
@@ -19,6 +19,10 @@ def get_frame(cap):
     if not ret:
         return None
     return frame
+
+def crop_scale_area(frame):
+    scale_frame=frame[SCALE_Y1:SCALE_Y2,SCALE_X1:SCALE_X2]
+    return scale_frame
 
 def release_camera(cap):
     cap.release()

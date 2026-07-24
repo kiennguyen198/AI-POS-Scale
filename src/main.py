@@ -15,7 +15,8 @@ while 1:
     frame=camera.get_frame(cap)
     if frame is None:
         break
-    results=detector.detect(model,frame)
+    scale_frame=camera.crop_scale_area(frame)
+    results=detector.detect(model,scale_frame)
     fruit_names=detector.get_fruit_names(results)
     if not detector.has_fruit(fruit_names):
         print('Chưa có trái cây')
