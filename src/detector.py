@@ -26,9 +26,6 @@ def get_fruit_names(results):
 
     return fruit_names
 
-def has_fruit(fruit_names):
-    return len(fruit_names) > 0
-
 def check_single_fruit_type(fruit_names):
     return len(set(fruit_names))==1
 

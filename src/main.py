@@ -1,6 +1,4 @@
 # mọi thứ gặp nhau ở main, main điều phối, và các module không được biết nhau
-# tên biến luôn viết in hoa để mọi người hiểu đây là hằng số cấu hình 
-# nhớ chia theo module
 import cv2
 import camera 
 import detector
@@ -11,6 +9,7 @@ model=detector.load_model()
 conn = database.connect_database()
 cursor = database.create_cursor(conn)
 print(cap)
+detection_history=[] # mảng 2 chiều lưu tất cả loại quả xuất hiện trên 15 frame
 while 1:
     frame=camera.get_frame(cap)
     if frame is None:
@@ -18,13 +17,18 @@ while 1:
     scale_frame=camera.crop_scale_area(frame)
     results=detector.detect(model,scale_frame)
     fruit_names=detector.get_fruit_names(results)
-    if not detector.has_fruit(fruit_names):
-        print('Chưa có trái cây')
+    detection_history=detector.update_detection_history(detection_history,fruit_names)
+
+    if detector.has_multiple_fruit_types(detection_history):
+        print('Không được có nhiều loại trái cây')
         continue
-    if not detector.check_single_fruit_type(fruit_names):
-        print("Không được có nhiều loại trái cây")
+
+    fruit_name=detector.get_stable_fruit(detection_history)
+
+    if fruit_name is None:
+        print("Đang nhận diện trái cây")
         continue
-    fruit_name = fruit_names[0]
+
     price = database.get_price(cursor, fruit_name)
     weight=scale.get_weight()
     total=int(price*weight)
