@@ -17,3 +17,10 @@ def calculate_cart_total(cart):
     for item in cart:
         cart_total+=item["item_total"]
     return cart_total
+
+def remove_item(cart,item_index):
+    removed_item=cart.pop(item_index)
+    return removed_item
+
+def clear_cart(cart):
+    cart.clear()
