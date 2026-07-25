@@ -35,6 +35,12 @@ def get_weight(hx,tare_offset,calibration):
 def is_scale_empty(weight):
     return abs(weight)<=EMPTY_WEIGHT_THRESHOLD
 
+def update_weight_history(weights,weight): # lưu 15 giá trị cân gần nhất
+    weights.append(weight)
+    if len(weights)>STABLE_SAMPLE_COUNT:
+        weights.pop(0)
+    return weights
+
 def is_weight_stable(weights):
     if len(weights)<STABLE_SAMPLE_COUNT:
         return False
