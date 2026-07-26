@@ -1,13 +1,14 @@
+# hằng số cấu hình viết in hoa
 from pathlib import Path
 
-# root
+# Root
 PROJECT_ROOT=Path(__file__).resolve().parent.parent
 
-# camera
+# Camera
 CAMERA_SOURCE=0
 FRAME_WIDTH=640
 FRAME_HEIGHT=480
-# vùng mặt cân trong hình camera
+# Vùng mặt cân trong hình camera
 SCALE_X1=80
 SCALE_Y1=60
 SCALE_X2=560
@@ -33,3 +34,5 @@ STABLE_SAMPLE_COUNT=15
 STABLE_WEIGHT_THRESHOLD=5
 MAX_WEIGHT=5000
 
+# QR scanner
+QR_RELEASE_FRAME_COUNT=5
