@@ -13,6 +13,14 @@ FRAME_DELAY_MS=30
 CAMERA_RETRY_MS=1000
 MAX_CAMERA_FAILURES=10
 
+FRUIT_DISPLAY_NAMES={
+    "apple":"Táo",
+    "orange":"Cam",
+    "banana":"Chuối",
+    "mango":"Xoài",
+    "guava":"Ổi"
+}
+
 
 def create_cashier_app():
     root=cashier_ui.create_window()
@@ -130,6 +138,11 @@ def update_cart_from_scan(
     was_visible
 ):
     if should_add:
+        product["fruit_name"]=FRUIT_DISPLAY_NAMES.get(
+            product["fruit_name"],
+            product["fruit_name"]
+        )
+
         product_added=cart.add_scanned_product(
             app["cart"],
             product,

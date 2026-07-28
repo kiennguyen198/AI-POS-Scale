@@ -254,7 +254,17 @@ def process_weighing_frame(app,frame,weight_g):
             f"Không tìm thấy giá của {stable_fruit} trong database."
         )
 
-    annotated_scale_frame=results[0].plot()
+    result=results[0]
+    translated_names={}
+
+    for class_id,class_name in result.names.items():
+        translated_names[class_id]=FRUIT_DISPLAY_NAMES.get(
+            class_name,
+            class_name
+        )
+
+    result.names=translated_names
+    annotated_scale_frame=result.plot()
 
     return draw_scale_area(
         frame,
