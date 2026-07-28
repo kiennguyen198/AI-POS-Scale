@@ -1,7 +1,8 @@
 import sqlite3
+from config import DATABASE_PATH
 # Mở kết nối tới database fruits.db
 def connect_database():
-    conn=sqlite3.connect('database/fruits.db')
+    conn=sqlite3.connect(DATABASE_PATH)
     return conn
 
 # Tạo cursor để gửi câu lệnh SQL tới database
