@@ -5,7 +5,8 @@ from pathlib import Path
 PROJECT_ROOT=Path(__file__).resolve().parent.parent
 
 # Camera
-CAMERA_SOURCE=0
+CUSTOMER_CAMERA_SOURCE="http://192.168.2.19:4747/video"
+CASHIER_CAMERA_SOURCE=0
 FRAME_WIDTH=640
 FRAME_HEIGHT=480
 # Vùng mặt cân trong hình camera

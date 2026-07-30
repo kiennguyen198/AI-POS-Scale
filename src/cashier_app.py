@@ -7,6 +7,7 @@ import camera
 import cart
 import cashier_ui
 import scanner
+from config import CASHIER_CAMERA_SOURCE
 
 
 FRAME_DELAY_MS=30
@@ -56,7 +57,7 @@ def create_cashier_app():
 
 def open_camera(app):
     try:
-        app["cap"]=camera.open_camera()
+        app["cap"]=camera.open_camera(CASHIER_CAMERA_SOURCE)
         app["camera_failures"]=0
         cashier_ui.set_scan_status(
             app["ui"],

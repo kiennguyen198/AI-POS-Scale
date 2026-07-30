@@ -10,7 +10,7 @@ import detector
 import qr
 import scale
 import customer_ui as ui
-from config import SCALE_X1,SCALE_X2,SCALE_Y1,SCALE_Y2
+from config import CUSTOMER_CAMERA_SOURCE,SCALE_X1,SCALE_X2,SCALE_Y1,SCALE_Y2
 
 
 UPDATE_DELAY_MS=100
@@ -111,7 +111,7 @@ def initialize_resources(app):
 
 def open_customer_camera(app):
     try:
-        app["cap"]=camera.open_camera()
+        app["cap"]=camera.open_camera(CUSTOMER_CAMERA_SOURCE)
         app["camera_failures"]=0
         return True
     except RuntimeError:
