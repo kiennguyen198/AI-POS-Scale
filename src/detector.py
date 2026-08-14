@@ -1,5 +1,5 @@
 from ultralytics import YOLO
-from config import MODEL_PATH, CONFIDENCE_THRESHOLD,DETECTION_HISTORY_SIZE,DETECTION_MIN_COUNT,MIXED_HISTORY_SIZE,MIXED_MIN_COUNT
+from config import MODEL_PATH, CONFIDENCE_THRESHOLD,INFERENCE_IMAGE_SIZE,DETECTION_HISTORY_SIZE,DETECTION_MIN_COUNT,MIXED_HISTORY_SIZE,MIXED_MIN_COUNT
 
 def load_model():
     model=YOLO(str(MODEL_PATH))
@@ -10,6 +10,7 @@ def detect(model,frame):
     results= model.predict(
         frame,
         conf=CONFIDENCE_THRESHOLD,
+        imgsz=INFERENCE_IMAGE_SIZE,
         verbose=False, # không in chi tiết vào terminal
     )
     return results

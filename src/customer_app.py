@@ -1,4 +1,5 @@
 import tkinter as tk
+import time
 
 import cv2
 from PIL import Image,ImageTk
@@ -14,6 +15,7 @@ from config import CUSTOMER_CAMERA_SOURCE,SCALE_X1,SCALE_X2,SCALE_Y1,SCALE_Y2
 
 
 UPDATE_DELAY_MS=100
+DETECTION_INTERVAL_SECONDS=0.4
 CAMERA_RETRY_MS=1000
 MAX_CAMERA_FAILURES=10
 DEFAULT_DEMO_WEIGHT_G=850
@@ -38,7 +40,7 @@ def create_customer_app(
     app={
         "root":root,
         "ui":None,
-        "cap":None,
+        "camera_reader":None,
         "model":None,
         "conn":None,
         "cursor":None,
@@ -54,6 +56,8 @@ def create_customer_app(
         "qr_product":None,
         "last_weight_g":0,
         "camera_failures":0,
+        "last_detection_time":0,
+        "annotated_scale_frame":None,
         "resources_ready":False,
         "running":True,
         "after_id":None
@@ -111,11 +115,13 @@ def initialize_resources(app):
 
 def open_customer_camera(app):
     try:
-        app["cap"]=camera.open_camera(CUSTOMER_CAMERA_SOURCE)
+        app["camera_reader"]=camera.start_latest_frame_reader(
+            CUSTOMER_CAMERA_SOURCE
+        )
         app["camera_failures"]=0
         return True
     except RuntimeError:
-        app["cap"]=None
+        app["camera_reader"]=None
         ui.update_camera(app["ui"],None)
         set_customer_error(
             app,
@@ -133,15 +139,19 @@ def update_customer_app(app):
         schedule_next_update(app,UPDATE_DELAY_MS)
         return
 
-    if app["cap"] is None:
+    if app["camera_reader"] is None:
         camera_opened=open_customer_camera(app)
         delay=UPDATE_DELAY_MS if camera_opened else CAMERA_RETRY_MS
         schedule_next_update(app,delay)
         return
 
-    frame=camera.get_frame(app["cap"])
+    frame=camera.get_latest_frame(app["camera_reader"])
 
     if frame is None:
+        if camera.is_reader_starting(app["camera_reader"]):
+            schedule_next_update(app,UPDATE_DELAY_MS)
+            return
+
         handle_camera_failure(app)
         schedule_next_update(app,UPDATE_DELAY_MS)
         return
@@ -174,6 +184,8 @@ def process_weighing_frame(app,frame,weight_g):
         app["weight_history"].clear()
         app["product"]=None
         app["state"]=controller.EMPTY
+        app["last_detection_time"]=0
+        app["annotated_scale_frame"]=None
 
         ui.update_product_info(app["ui"])
         ui.set_customer_state(app["ui"],app["state"])
@@ -187,15 +199,26 @@ def process_weighing_frame(app,frame,weight_g):
 
     scale_frame=camera.crop_scale_area(frame)
 
+    detection_elapsed=time.monotonic()-app["last_detection_time"]
+
+    if detection_elapsed<DETECTION_INTERVAL_SECONDS:
+        return draw_scale_area(
+            frame,
+            app["annotated_scale_frame"]
+        )
+
     try:
         results=detector.detect(app["model"],scale_frame)
     except Exception as error:
+        app["last_detection_time"]=time.monotonic()
         app["product"]=None
         set_customer_error(
             app,
             f"Không thể nhận diện trái cây: {error}"
         )
         return draw_scale_area(frame)
+
+    app["last_detection_time"]=time.monotonic()
 
     fruit_names=detector.get_fruit_names(results)
     detector.update_detection_history(
@@ -265,6 +288,7 @@ def process_weighing_frame(app,frame,weight_g):
 
     result.names=translated_names
     annotated_scale_frame=result.plot()
+    app["annotated_scale_frame"]=annotated_scale_frame
 
     return draw_scale_area(
         frame,
@@ -476,6 +500,8 @@ def reset_weighing_cycle(app):
     app["product"]=None
     app["qr_product"]=None
     app["last_weight_g"]=0
+    app["last_detection_time"]=0
+    app["annotated_scale_frame"]=None
 
     ui.set_qr_image(app["ui"],None)
     ui.update_product_info(app["ui"])
@@ -581,8 +607,8 @@ def handle_camera_failure(app):
     if app["camera_failures"]<MAX_CAMERA_FAILURES:
         return
 
-    camera.release_camera(app["cap"])
-    app["cap"]=None
+    camera.stop_latest_frame_reader(app["camera_reader"])
+    app["camera_reader"]=None
     app["camera_failures"]=0
     ui.update_camera(app["ui"],None)
     set_customer_error(
@@ -613,12 +639,12 @@ def schedule_next_update(app,delay):
 
 
 def release_resources(app):
-    if app["cap"] is not None:
+    if app["camera_reader"] is not None:
         try:
-            camera.release_camera(app["cap"])
+            camera.stop_latest_frame_reader(app["camera_reader"])
         except Exception:
             pass
-        app["cap"]=None
+        app["camera_reader"]=None
 
     if app["conn"] is not None:
         try:

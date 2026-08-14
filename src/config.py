@@ -5,7 +5,7 @@ from pathlib import Path
 PROJECT_ROOT=Path(__file__).resolve().parent.parent
 
 # Camera
-CUSTOMER_CAMERA_SOURCE="http://192.168.2.19:4747/video"
+CUSTOMER_CAMERA_SOURCE = "picamera2"
 CASHIER_CAMERA_SOURCE=0
 FRAME_WIDTH=640
 FRAME_HEIGHT=480
@@ -18,6 +18,7 @@ SCALE_Y2=420
 # AI
 MODEL_PATH=PROJECT_ROOT/'models'/'best.pt'
 CONFIDENCE_THRESHOLD=0.5
+INFERENCE_IMAGE_SIZE=320
 
 DETECTION_HISTORY_SIZE=15 # nhận 15 frame
 DETECTION_MIN_COUNT=10  # tên quả nào xuất hiện ít nhất 10/15 frame thì trả về
