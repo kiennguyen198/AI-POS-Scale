@@ -1,13 +1,28 @@
-EMPTY="EMPTY"                       # cân trống
-DETECTING="DETECTING"               # đang xác định loại quả    
-MIXED_BLOCKED="MIXED_BLOCKED"       # có nhiều loại quả, không cho thêm
-STABILIZING="STABILIZING"           # biết loại quả nhưng đang dao động
-READY_TO_QR="READY_TO_QR"
-SHOWING_QR="SHOWING_QR"
+"""State transitions for the customer self-checkout scale."""
 
-def get_qr_state(current_state,is_empty,has_mixed_fruits,stable_fruit,is_weight_stable):
-    if current_state==SHOWING_QR:
-        return SHOWING_QR
+EMPTY = "EMPTY"
+DETECTING = "DETECTING"
+MIXED_BLOCKED = "MIXED_BLOCKED"
+STABILIZING = "STABILIZING"
+READY_TO_ADD = "READY_TO_ADD"
+WAITING_REMOVAL = "WAITING_REMOVAL"
+SHOWING_PAYMENT_QR = "SHOWING_PAYMENT_QR"
+
+# Names kept for old demo/cashier imports.
+READY_TO_QR = READY_TO_ADD
+SHOWING_QR = SHOWING_PAYMENT_QR
+
+
+def get_weighing_state(
+    current_state,
+    is_empty,
+    has_mixed_fruits,
+    stable_fruit,
+    is_weight_stable,
+):
+    """Return the state of the item currently placed on the scale."""
+    if current_state in (WAITING_REMOVAL, SHOWING_PAYMENT_QR):
+        return current_state
 
     if is_empty:
         return EMPTY
@@ -21,16 +36,21 @@ def get_qr_state(current_state,is_empty,has_mixed_fruits,stable_fruit,is_weight_
     if not is_weight_stable:
         return STABILIZING
 
-    return READY_TO_QR
+    return READY_TO_ADD
 
-def show_qr(current_state):
-    if current_state!=READY_TO_QR:
-        return current_state
-    return SHOWING_QR
 
-def next_weighing(current_state,is_empty):
-    if current_state!=SHOWING_QR:
-        return current_state
-    if not is_empty:
-        return SHOWING_QR
-    return EMPTY
+def get_qr_state(
+    current_state,
+    is_empty,
+    has_mixed_fruits,
+    stable_fruit,
+    is_weight_stable,
+):
+    """Compatibility wrapper for the previous label-QR implementation."""
+    return get_weighing_state(
+        current_state,
+        is_empty,
+        has_mixed_fruits,
+        stable_fruit,
+        is_weight_stable,
+    )

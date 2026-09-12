@@ -48,7 +48,10 @@ def open_camera(source):
 def _read_camera_frame(camera):
     if camera.__class__.__name__ == "Picamera2":
         frame = camera.capture_array()
-        return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        # Picamera2's RGB888 buffer is laid out as BGR in memory, which is
+        # already the channel order expected by OpenCV and Ultralytics.
+        # Do not convert it here or red/blue will be swapped.
+        return frame
 
     ret, frame = camera.read()
 
@@ -64,7 +67,7 @@ def get_frame(camera):
     if frame is None:
         return None
 
-    return cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
+    return resize_frame(frame)
 
 
 def start_latest_frame_reader(source):
@@ -117,6 +120,15 @@ def get_latest_frame(reader, max_age_seconds=2):
 
     if time.monotonic() - last_frame_time > max_age_seconds:
         return None
+
+    return resize_frame(frame)
+
+
+def resize_frame(frame):
+    frame_height, frame_width = frame.shape[:2]
+
+    if frame_width == FRAME_WIDTH and frame_height == FRAME_HEIGHT:
+        return frame
 
     return cv2.resize(frame, (FRAME_WIDTH, FRAME_HEIGHT))
 

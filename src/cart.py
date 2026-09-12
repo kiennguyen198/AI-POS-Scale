@@ -22,6 +22,12 @@ def add_item(
 
     cart.append(item)
 
+
+def item_display_text(item):
+    """Return one compact line for the customer cart."""
+    total = f"{item['item_total']:,}".replace(",", ".")
+    return f"{item['fruit_name']} - {int(item['weight_g'])} g - {total} đ"
+
 def calculate_cart_total(cart):
     cart_total=0
     for item in cart:

@@ -1,10 +1,12 @@
 import tkinter as tk
+import threading
 import time
 
 import cv2
 from PIL import Image,ImageTk
 
 import camera
+import cart
 import controller
 import database
 import detector
@@ -53,11 +55,18 @@ def create_customer_app(
         "detection_history":[],
         "weight_history":[],
         "product":None,
-        "qr_product":None,
+        "cart":[],
+        "order_id":None,
+        "qr_product":None,  # kept for compatibility with the old label-QR path
         "last_weight_g":0,
         "camera_failures":0,
         "last_detection_time":0,
-        "annotated_scale_frame":None,
+        "latest_detections":[],
+        "detection_lock":threading.Lock(),
+        "detection_running":False,
+        "detection_result":None,
+        "detection_error":None,
+        "detection_epoch":0,
         "resources_ready":False,
         "running":True,
         "after_id":None
@@ -65,8 +74,9 @@ def create_customer_app(
 
     customer_ui=ui.create_customer_ui(
         root,
-        on_create_qr=lambda:create_product_qr(app),
-        on_next=lambda:start_next_weighing(app)
+        on_add_item=lambda:add_current_product(app),
+        on_payment=lambda:create_payment_qr(app),
+        on_new_order=lambda:start_new_order(app),
     )
     app["ui"]=customer_ui
 
@@ -134,8 +144,7 @@ def update_customer_app(app):
     if not app["running"] or not app["resources_ready"]:
         return
 
-    if app["state"]==controller.SHOWING_QR:
-        update_qr_waiting_screen(app)
+    if app["state"]==controller.SHOWING_PAYMENT_QR:
         schedule_next_update(app,UPDATE_DELAY_MS)
         return
 
@@ -185,12 +194,23 @@ def process_weighing_frame(app,frame,weight_g):
         app["product"]=None
         app["state"]=controller.EMPTY
         app["last_detection_time"]=0
-        app["annotated_scale_frame"]=None
+        invalidate_detection(app)
+        app["latest_detections"].clear()
 
         ui.update_product_info(app["ui"])
+        ui.update_cart(
+            app["ui"],
+            app["cart"],
+            cart.calculate_cart_total(app["cart"])
+        )
         ui.set_customer_state(app["ui"],app["state"])
 
         return draw_scale_area(frame)
+
+    if app["state"]==controller.WAITING_REMOVAL:
+        # Keep the finished item in the order and wait for the customer to
+        # remove it before accepting another weighing cycle.
+        return draw_scale_area(frame,app["latest_detections"])
 
     scale.update_weight_history(
         app["weight_history"],
@@ -198,27 +218,92 @@ def process_weighing_frame(app,frame,weight_g):
     )
 
     scale_frame=camera.crop_scale_area(frame)
+    results,error=take_detection_result(app)
 
-    detection_elapsed=time.monotonic()-app["last_detection_time"]
-
-    if detection_elapsed<DETECTION_INTERVAL_SECONDS:
-        return draw_scale_area(
-            frame,
-            app["annotated_scale_frame"]
-        )
-
-    try:
-        results=detector.detect(app["model"],scale_frame)
-    except Exception as error:
-        app["last_detection_time"]=time.monotonic()
+    if error is not None:
         app["product"]=None
+        app["latest_detections"].clear()
         set_customer_error(
             app,
             f"Không thể nhận diện trái cây: {error}"
         )
-        return draw_scale_area(frame)
 
-    app["last_detection_time"]=time.monotonic()
+    if results is not None:
+        process_detection_result(app,results,weight_g,scale_empty)
+
+    detection_elapsed=time.monotonic()-app["last_detection_time"]
+    if (
+        detection_elapsed>=DETECTION_INTERVAL_SECONDS
+        and not is_detection_running(app)
+    ):
+        start_detection(app,scale_frame)
+
+    return draw_scale_area(
+        frame,
+        app["latest_detections"]
+    )
+
+
+def start_detection(app,scale_frame):
+    with app["detection_lock"]:
+        if app["detection_running"]:
+            return
+
+        app["detection_running"]=True
+        app["detection_result"]=None
+        app["detection_error"]=None
+        detection_epoch=app["detection_epoch"]
+        app["last_detection_time"]=time.monotonic()
+
+    detection_thread=threading.Thread(
+        target=run_detection,
+        args=(app,scale_frame.copy(),detection_epoch),
+        daemon=True
+    )
+    detection_thread.start()
+
+
+def run_detection(app,scale_frame,detection_epoch):
+    try:
+        results=detector.detect(app["model"],scale_frame)
+        error=None
+    except Exception as detection_error:
+        results=None
+        error=detection_error
+
+    with app["detection_lock"]:
+        if detection_epoch==app["detection_epoch"]:
+            app["detection_result"]=results
+            app["detection_error"]=error
+
+        app["detection_running"]=False
+
+
+def is_detection_running(app):
+    with app["detection_lock"]:
+        return app["detection_running"]
+
+
+def take_detection_result(app):
+    with app["detection_lock"]:
+        results=app["detection_result"]
+        error=app["detection_error"]
+        app["detection_result"]=None
+        app["detection_error"]=None
+
+    return results,error
+
+
+def invalidate_detection(app):
+    with app["detection_lock"]:
+        app["detection_epoch"]+=1
+        app["detection_result"]=None
+        app["detection_error"]=None
+
+
+def process_detection_result(app,results,weight_g,scale_empty):
+    if scale_empty:
+        return
 
     fruit_names=detector.get_fruit_names(results)
     detector.update_detection_history(
@@ -236,7 +321,7 @@ def process_weighing_frame(app,frame,weight_g):
         app["weight_history"]
     )
 
-    next_state=controller.get_qr_state(
+    next_state=controller.get_weighing_state(
         app["state"],
         scale_empty,
         mixed_fruits,
@@ -251,7 +336,7 @@ def process_weighing_frame(app,frame,weight_g):
         mixed_fruits
     )
 
-    if next_state==controller.READY_TO_QR and product is None:
+    if next_state==controller.READY_TO_ADD and product is None:
         next_state=controller.DETECTING
 
     app["product"]=product
@@ -287,13 +372,37 @@ def process_weighing_frame(app,frame,weight_g):
         )
 
     result.names=translated_names
-    annotated_scale_frame=result.plot()
-    app["annotated_scale_frame"]=annotated_scale_frame
+    app["latest_detections"]=extract_detections(result)
 
-    return draw_scale_area(
-        frame,
-        annotated_scale_frame
-    )
+
+def extract_detections(result):
+    detections=[]
+    boxes=result.boxes
+
+    if boxes is None or len(boxes)==0:
+        return detections
+
+    coordinates=boxes.xyxy.cpu().numpy()
+    class_ids=boxes.cls.cpu().numpy().astype(int)
+    confidences=boxes.conf.cpu().numpy()
+
+    for box,class_id,confidence in zip(
+        coordinates,
+        class_ids,
+        confidences
+    ):
+        detections.append(
+            (
+                float(box[0]),
+                float(box[1]),
+                float(box[2]),
+                float(box[3]),
+                result.names[int(class_id)],
+                float(confidence)
+            )
+        )
+
+    return detections
 
 
 def read_weight(app):
@@ -501,7 +610,8 @@ def reset_weighing_cycle(app):
     app["qr_product"]=None
     app["last_weight_g"]=0
     app["last_detection_time"]=0
-    app["annotated_scale_frame"]=None
+    invalidate_detection(app)
+    app["latest_detections"].clear()
 
     ui.set_qr_image(app["ui"],None)
     ui.update_product_info(app["ui"])
@@ -509,7 +619,109 @@ def reset_weighing_cycle(app):
     ui.show_weighing_screen(app["ui"])
 
 
-def draw_scale_area(frame,annotated_scale_frame=None):
+def _reset_current_item(app, state):
+    """Clear only the item on the platform, preserving the current cart."""
+    app["product"] = None
+    app["detection_history"].clear()
+    app["weight_history"].clear()
+    app["last_weight_g"] = 0
+    app["last_detection_time"] = 0
+    app["latest_detections"].clear()
+    invalidate_detection(app)
+    app["state"] = state
+    ui.update_product_info(app["ui"])
+    ui.update_cart(
+        app["ui"],
+        app["cart"],
+        cart.calculate_cart_total(app["cart"]),
+    )
+    ui.set_customer_state(app["ui"], state)
+
+
+def add_current_product(app):
+    """Commit the stable item on the platform as one cart line."""
+    if app["state"] != controller.READY_TO_ADD or app["product"] is None:
+        return
+
+    product = app["product"].copy()
+    if app["use_scale"]:
+        current_weight = read_weight(app)
+        if current_weight is None or scale.is_scale_empty(current_weight):
+            _reset_current_item(app, controller.EMPTY)
+            return
+
+        app["last_weight_g"] = current_weight
+        scale.update_weight_history(app["weight_history"], current_weight)
+        if not scale.is_weight_stable(app["weight_history"]):
+            app["state"] = controller.STABILIZING
+            ui.set_customer_state(app["ui"], app["state"])
+            return
+
+        product["weight_g"] = current_weight
+        product["total"] = round(
+            product["price_per_kg"] * current_weight / 1000
+        )
+
+    cart.add_item(
+        app["cart"],
+        product["display_name"],
+        product["weight_g"],
+        product["price_per_kg"],
+    )
+    ui.update_cart(
+        app["ui"],
+        app["cart"],
+        cart.calculate_cart_total(app["cart"]),
+    )
+
+    if app["use_scale"]:
+        # A real scale must return to zero before the next line can be added.
+        _reset_current_item(app, controller.WAITING_REMOVAL)
+    else:
+        # Demo mode has no empty-platform signal, so allow another demo cycle.
+        _reset_current_item(app, controller.EMPTY)
+
+
+def create_payment_qr(app):
+    """Show one QR containing the order reference and total cart amount."""
+    if not app["cart"] or app["state"] != controller.EMPTY:
+        return
+
+    total = cart.calculate_cart_total(app["cart"])
+    order_id = qr.create_order_id()
+    qr_data = qr.create_payment_qr_data(order_id, total)
+
+    try:
+        qr_image = qr.create_qr_image(qr_data)
+    except Exception as error:
+        set_customer_error(app, f"Không thể tạo QR thanh toán: {error}")
+        return
+
+    app["order_id"] = order_id
+    app["state"] = controller.SHOWING_PAYMENT_QR
+    ui.show_payment_qr(
+        app["ui"],
+        qr_image,
+        order_id,
+        total,
+        len(app["cart"]),
+    )
+
+
+def start_new_order(app):
+    """Clear the paid/demo order and return to the weighing screen."""
+    app["cart"].clear()
+    app["order_id"] = None
+    _reset_current_item(app, controller.EMPTY)
+    ui.show_weighing_screen(app["ui"])
+
+
+# Public compatibility aliases for scripts that used the previous button names.
+create_product_qr = create_payment_qr
+start_next_weighing = start_new_order
+
+
+def draw_scale_area(frame,detections=None):
     display_frame=frame.copy()
     frame_height,frame_width=display_frame.shape[:2]
 
@@ -521,24 +733,43 @@ def draw_scale_area(frame,annotated_scale_frame=None):
     if x2<=x1 or y2<=y1:
         return display_frame
 
-    if annotated_scale_frame is not None:
-        scale_width=x2-x1
-        scale_height=y2-y1
+    if detections:
+        current_scale_frame=display_frame[y1:y2,x1:x2]
+        scale_height,scale_width=current_scale_frame.shape[:2]
 
-        if (
-            annotated_scale_frame.shape[1]!=scale_width
-            or annotated_scale_frame.shape[0]!=scale_height
-        ):
-            annotated_scale_frame=cv2.resize(
-                annotated_scale_frame,
-                (scale_width,scale_height),
-                interpolation=cv2.INTER_LINEAR
+        for (
+            box_x1,
+            box_y1,
+            box_x2,
+            box_y2,
+            class_name,
+            confidence
+        ) in detections:
+            box_x1=max(0,min(round(box_x1),scale_width-1))
+            box_y1=max(0,min(round(box_y1),scale_height-1))
+            box_x2=max(0,min(round(box_x2),scale_width-1))
+            box_y2=max(0,min(round(box_y2),scale_height-1))
+
+            cv2.rectangle(
+                current_scale_frame,
+                (box_x1,box_y1),
+                (box_x2,box_y2),
+                (40,180,255),
+                2
             )
 
-        display_frame[
-            y1:y2,
-            x1:x2
-        ]=annotated_scale_frame
+            label=f"{class_name} {confidence:.2f}"
+            label_y=max(18,box_y1-6)
+            cv2.putText(
+                current_scale_frame,
+                label,
+                (box_x1,label_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (40,180,255),
+                1,
+                cv2.LINE_AA
+            )
 
     cv2.rectangle(
         display_frame,
@@ -625,7 +856,8 @@ def set_customer_error(app,message):
         bg="#FDE8E7"
     )
     customer_ui["instruction_var"].set(message)
-    ui.set_create_qr_enabled(customer_ui,False)
+    customer_ui["add_item_button"].configure(state=tk.DISABLED)
+    customer_ui["payment_button"].configure(state=tk.DISABLED)
 
 
 def schedule_next_update(app,delay):

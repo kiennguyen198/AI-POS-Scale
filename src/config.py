@@ -1,12 +1,22 @@
 # hằng số cấu hình viết in hoa
+import sys
 from pathlib import Path
 
 # Root
 PROJECT_ROOT=Path(__file__).resolve().parent.parent
 
 # Camera
-CUSTOMER_CAMERA_SOURCE = "picamera2"
-CASHIER_CAMERA_SOURCE=0
+# Webcam mặc định dùng khi chạy thử trên laptop.
+LAPTOP_CAMERA_SOURCE = 0
+
+# Pi Camera V2 dùng qua Picamera2 trên Raspberry Pi OS.
+PI_CAMERA_SOURCE = "picamera2"
+
+# Tự chọn camera theo thiết bị chạy chương trình.
+CUSTOMER_CAMERA_SOURCE = (
+    PI_CAMERA_SOURCE if sys.platform.startswith("linux") else LAPTOP_CAMERA_SOURCE
+)
+CASHIER_CAMERA_SOURCE = LAPTOP_CAMERA_SOURCE
 FRAME_WIDTH=640
 FRAME_HEIGHT=480
 # Vùng mặt cân trong hình camera
